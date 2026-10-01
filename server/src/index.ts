@@ -1,5 +1,5 @@
 import express from 'express';
-import { approve, assets, budgetLines, contracts, createApproval, dashboard, projectSummary, projects, rightsConflicts } from './domain.js';
+import { approve, assets, budgetLines, compareVersions, contracts, createApproval, dashboard, listPrechecks, listVersions, projectSummary, projects, recheckDelivery, registerVersion, revokeRights, rightsConflicts, transitionVersion, versionDetail } from './domain.js';
 const app = express(); app.use(express.json());
 app.get('/api/dashboard', (_req, res) => res.json(dashboard()));
 app.get('/api/projects', (_req, res) => res.json(projects));
@@ -7,8 +7,19 @@ app.get('/api/projects/:id/summary', (req, res) => { const result = projectSumma
 app.get('/api/projects/:id/rights-conflicts', (req, res) => res.json(rightsConflicts(req.params.id)));
 app.get('/api/projects/:id/assets', (req, res) => res.json(assets.filter(asset => asset.projectId === req.params.id)));
 app.get('/api/projects/:id/contracts', (req, res) => res.json(contracts.filter(contract => contract.projectId === req.params.id)));
+app.get('/api/projects/:id/delivery-prechecks', (req, res) => res.json(listPrechecks(req.params.id)));
 app.get('/api/budgets/:projectId/lines', (req, res) => res.json(budgetLines.filter(line => line.projectId === req.params.projectId)));
 app.post('/api/approvals', (req, res) => res.status(201).json(createApproval(req.body)));
 app.patch('/api/approvals/:id', (req, res) => { const result = approve(req.params.id, req.body.status, req.body.comment); if (!result) return res.status(404).json({ message: '审批不存在' }); res.json(result); });
+// 资产版本谱系
+app.get('/api/assets/:id/versions', (req, res) => { if (!assets.some(a => a.id === req.params.id)) return res.status(404).json({ message: '资产不存在' }); res.json(listVersions(req.params.id)); });
+app.post('/api/assets/:id/versions', (req, res) => { const result = registerVersion(req.params.id, req.body); if (!result.ok) return res.status(result.status).json(result); res.status(result.value.replay ? 200 : 201).json(result.value); });
+app.get('/api/assets/:id/versions/compare', (req, res) => { const result = compareVersions(req.params.id, String(req.query.from || ''), String(req.query.to || '')); if (!result) return res.status(404).json({ message: '版本不存在或不属于同一资产' }); res.json(result); });
+app.get('/api/versions/:id', (req, res) => { const result = versionDetail(req.params.id); if (!result) return res.status(404).json({ message: '版本不存在' }); res.json(result); });
+app.post('/api/versions/:id/submit', (req, res) => { const result = transitionVersion(req.params.id, 'submit', req.body.actor || '当前用户', req.body.note, req.body.approver); if (!result.ok) return res.status(result.status).json(result); res.json(result.value); });
+app.post('/api/versions/:id/lock', (req, res) => { const result = transitionVersion(req.params.id, 'lock', req.body.actor || '当前用户', req.body.note); if (!result.ok) return res.status(result.status).json(result); res.json(result.value); });
+app.post('/api/versions/:id/withdraw', (req, res) => { const result = transitionVersion(req.params.id, 'withdraw', req.body.actor || '当前用户', req.body.note); if (!result.ok) return res.status(result.status).json(result); res.json(result.value); });
+app.post('/api/versions/:id/revoke-rights', (req, res) => { const result = revokeRights(req.params.id, req.body.actor || '当前用户', req.body.reason); if (!result.ok) return res.status(result.status).json(result); res.status(201).json(result.value); });
+app.post('/api/delivery-prechecks/:id/recheck', (req, res) => { const result = recheckDelivery(req.params.id, req.body.actor || '当前用户'); if (!result) return res.status(404).json({ message: '交付预检不存在' }); res.json(result); });
 app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'film-rights-platform' }));
 const port = Number(process.env.PORT || 4104); app.listen(port, () => console.log(`film rights API listening on ${port}`));
